@@ -1,0 +1,152 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+# 1. 安装 readr（如果没装过）
+install.packages("readr")
+
+# 2. 加载包
+library(readr)
+
+# 3. 读取 csv（建议用 / 或双反斜杠）
+dat <- read_csv("D:/keyan/CHARLS/CHARLS_charls/charlscm4.csv")
+
+```
+```{r}
+# 删除名为 'num' 的列
+dat$num <- NULL
+```
+
+```{r}
+library(dplyr)
+str(dat)
+summary(dat)
+```
+
+```{r}
+## 统计每列缺失值个数
+na_count <- colSums(is.na(dat))
+
+## 只保留缺失值 > 0 的列
+na_cols <- na_count[na_count > 0]
+
+## 查看结果
+na_cols
+
+```
+```{r}
+# 2. 选出缺失值数量 > 0 的列
+cols_with_na <- names(na_count[na_count > 0])
+
+# 对含缺失值的列，统计“非缺失”的唯一值个数
+sapply(dat[cols_with_na], function(x) length(unique(na.omit(x))))
+
+```
+
+```{r}
+#（我这里只放了有缺失的）
+binary_vars <- c(
+  "nation","marry","smoken","drinkl","pension","ins",
+  "fall_down","hip","pain","disability","teeth","cm"
+)
+ordinal_vars <- c(
+  "srh","satlife","disability_status","eyesight_distance","eyesight_close","hear","edu"
+)
+continuous_vars <- c(
+  "sleep","total_cognition","cesd10","hhcperc","age","cm_num"
+)
+```
+
+```{r}
+install.packages("rjags", type = "binary")
+```
+
+```{r}
+install.packages("JointAI")
+```
+
+
+```{r}
+
+library(rjags)
+library(JointAI)
+library(readr)
+library(future)
+plan(multisession, workers = 4)
+
+dat <- as.data.frame(dat)
+
+# ID / wave
+dat$ID   <- factor(dat$ID)
+dat$wave <- as.numeric(dat$wave)
+
+# 变量分组（我这里只放了有缺失的）
+binary_vars <- c("nation","marry","smoken","drinkl","pension","ins",
+                 "fall_down","hip","pain","disability","teeth","cm")
+ordinal_vars <- c("srh","satlife","disability_status","eyesight_distance","eyesight_close","hear","edu")
+continuous_vars <- c("sleep","total_cognition","cesd10","hhcperc","age","cm_num")
+
+# 类型（让 JointAI 知道每列是什么）
+for (v in intersect(binary_vars, names(dat)))  dat[[v]] <- factor(dat[[v]])
+for (v in intersect(ordinal_vars, names(dat))) dat[[v]] <- ordered(dat[[v]])
+if ("hhcperc" %in% names(dat) && max(dat$hhcperc, na.rm = TRUE) > 1)
+  dat$hhcperc <- dat$hhcperc / 100
+
+
+vars_with_na <- names(which(colSums(is.na(dat)) > 0))
+pick1 <- function(cands) { x <- intersect(cands, vars_with_na); if (length(x)) x[1] else NULL }
+y_var <- if ("disability_status" %in% vars_with_na) "disability_status" else
+         (pick1(continuous_vars) %||% pick1(binary_vars) %||% pick1(ordinal_vars))
+if (is.null(y_var)) stop("当前这些变量没有缺失，无需插补。")
+
+# 只把“有缺失的列 + wave”放 RHS，省时 
+rhs <- unique(c(intersect(c(binary_vars, ordinal_vars, continuous_vars), vars_with_na), "wave"))
+rhs <- setdiff(rhs, y_var)
+
+fixed_form <- as.formula(paste(y_var, "~", paste(rhs, collapse = " + ")))
+rand_form  <- ~ 1 | ID   # 省时：先用随机截距；需要再升级 ~ 1 + wave | ID
+
+set.seed(123)
+options(contrasts = c("contr.treatment", "contr.treatment"))
+fit <- if (y_var %in% ordinal_vars) {
+  clmm_imp(
+    fixed = fixed_form, random = rand_form, data = dat,
+    n.chains = 2, n.adapt = 300, n.iter = 2000, thin = 1,
+    progress.bar = "text"
+  )
+} else if (y_var %in% binary_vars) {
+  glm_imp(
+    fixed = fixed_form, family = binomial(), random = rand_form, data = dat,
+    n.chains = 2, n.adapt = 300, n.iter = 2000, thin = 1,
+    progress.bar = "text"
+  )
+} else {
+  lm_imp(
+    fixed = fixed_form, random = rand_form, data = dat,
+    n.chains = 2, n.adapt = 300, n.iter = 2000, thin = 1,
+    progress.bar = "text"
+  )
+}
+
+# 提取一套插补数据并导出
+dat_imp1 <- JointAI::complete(fit, m = 1)
+
+```
+```{r}
+write.csv(dat_imp1,
+          file = "想要保存的地址/dat_imp1.csv",
+          row.names = FALSE)
+```
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
