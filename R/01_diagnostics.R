@@ -1,5 +1,5 @@
 # =====================================================
-# 01_diagnostics.R - Environment Validation
+# 01_diagnostics.R - Environment Validation (FIXED)
 # =====================================================
 
 check_environment <- function() {
@@ -12,10 +12,10 @@ check_environment <- function() {
   jags_ok <- tryCatch({
     library(rjags, quietly = TRUE)
     version <- jags.version()
-    cat("JAGS Version:", version, "\n")
+    cat("JAGS Version:", as.character(version), "\n")  # Convert to character
     TRUE
   }, error = function(e) {
-    cat("JAGS: ERROR -", e, "\n")
+    cat("JAGS: ERROR -", e$message, "\n")
     FALSE
   })
   
@@ -34,7 +34,7 @@ check_environment <- function() {
   
   return(list(
     jags_available = jags_ok,
-    r_version_ok = as.numeric(R.Version()) >= 4,
+    r_version_ok = as.numeric(R.Version()$major) >= 4,
     packages_ok = packages_ok
   ))
 }
@@ -42,14 +42,18 @@ check_environment <- function() {
 quick_env_check <- function() {
   cat("=== QUICK ENVIRONMENT CHECK ===\n")
   
-  # Check R version
-  r_version <- as.numeric(paste(R.Version(), R.Version(), sep = "."))
-  cat("R Version:", R.version.string, ifelse(r_version >= 4.0, "✓", "⚠"), "\n")
+  # Check R version - simplified approach
+  r_major <- as.numeric(R.Version()$major)
+  r_minor <- as.numeric(R.Version()$minor)
+  r_version_num <- r_major + r_minor/10  # Convert to decimal
   
-  # Check JAGS
+  cat("R Version:", R.version.string, ifelse(r_version_num >= 4.0, "✓", "⚠"), "\n")
+  
+  # Check JAGS - simplified
   jags_ok <- tryCatch({
     library(rjags, quietly = TRUE)
-    cat("JAGS Version:", jags.version(), "✓\n")
+    jags_ver <- jags.version()
+    cat("JAGS Version:", as.character(jags_ver), "✓\n")  # Convert list to character
     TRUE
   }, error = function(e) {
     cat("JAGS: NOT FOUND ✗\n")
@@ -70,14 +74,14 @@ quick_env_check <- function() {
     }
   }
   
-  overall_ok <- jags_ok && packages_ok && r_version >= 4.0
+  overall_ok <- jags_ok && packages_ok && r_version_num >= 4.0
   cat("\nOverall status:", ifelse(overall_ok, "READY ✓", "NEEDS SETUP ✗"), "\n")
   
   if (!overall_ok) {
     cat("\nFIX THESE ISSUES FIRST:\n")
     if (!jags_ok) cat("1. Install JAGS system dependency\n")
     if (!packages_ok) cat("2. Install missing R packages\n")
-    if (r_version < 4.0) cat("3. Update R to version 4.0+\n")
+    if (r_version_num < 4.0) cat("3. Update R to version 4.0+\n")
   }
   
   return(overall_ok)

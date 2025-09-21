@@ -62,7 +62,7 @@ run_quick_setup <- function(data_path = NULL) {
       return(pipeline)
       
     }, error = function(e) {
-      cat("✗ Error with real data:", e, "\n")
+      cat("✗ Error with real data:", e$message, "\n")  # FIXED: e$message is a string
       cat("Environment setup completed, but data processing failed\n")
       cat("Check your data file path and format\n")
       return(invisible(NULL))

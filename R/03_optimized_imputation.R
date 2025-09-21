@@ -1,5 +1,5 @@
 # =====================================================
-# 03_optimized_imputation.R - Main Pipeline Class
+# 03_optimized_imputation.R - Main Pipeline Class (FIXED)
 # =====================================================
 
 # Ensure R6 is available
@@ -20,7 +20,7 @@ ImputationPipeline <- R6::R6Class("ImputationPipeline",
     
     # Initialize
     initialize = function(config = NULL) {
-      self <- config %||% self()
+      self$config <- config %||% self$get_default_config()
       cat("ImputationPipeline initialized\n")
     },
     
@@ -33,11 +33,11 @@ ImputationPipeline <- R6::R6Class("ImputationPipeline",
       }
       
       tryCatch({
-        self <- readr::read_csv(file_path, show_col_types = FALSE)
-        self()
-        cat("✓ Data loaded:", nrow(self), "rows,", ncol(self), "columns\n")
+        self$data <- readr::read_csv(file_path, show_col_types = FALSE)
+        self$prepare_longitudinal_data()
+        cat("✓ Data loaded:", nrow(self$data), "rows,", ncol(self$data), "columns\n")
       }, error = function(e) {
-        stop("Error loading data: ", e)
+        stop("Error loading data: ", e$message)
       })
       
       return(invisible(self))
@@ -45,17 +45,17 @@ ImputationPipeline <- R6::R6Class("ImputationPipeline",
     
     # Prepare longitudinal data structure
     prepare_longitudinal_data = function() {
-      if ("ID" %in% names(self)) {
-        self <- factor(self)
+      if ("ID" %in% names(self$data)) {
+        self$data$ID <- factor(self$data$ID)
       }
       
-      if ("wave" %in% names(self)) {
-        self <- as.numeric(self)
+      if ("wave" %in% names(self$data)) {
+        self$data$wave <- as.numeric(self$data$wave)
       }
       
       # Remove num column as in original code
-      if ("num" %in% names(self)) {
-        self <- NULL
+      if ("num" %in% names(self$data)) {
+        self$data$num <- NULL
         cat("✓ Removed 'num' column\n")
       }
       
@@ -64,29 +64,29 @@ ImputationPipeline <- R6::R6Class("ImputationPipeline",
     
     # Analyze missing data patterns
     analyze_missing_data = function() {
-      if (is.null(self)) {
+      if (is.null(self$data)) {
         stop("No data loaded")
       }
       
       cat("Analyzing missing data patterns...\n")
       
       # Basic missing data summary
-      missing_summary <- self %>%
+      missing_summary <- self$data %>%
         dplyr::summarise_all(~sum(is.na(.))) %>%
         tidyr::gather(variable, n_missing) %>%
-        dplyr::mutate(pct_missing = n_missing / nrow(self) * 100) %>%
+        dplyr::mutate(pct_missing = n_missing / nrow(self$data) * 100) %>%
         dplyr::filter(n_missing > 0) %>%
         dplyr::arrange(desc(n_missing))
       
-      self <- list(
+      self$missing_analysis <- list(
         summary = missing_summary,
-        total_missing = sum(is.na(self)),
-        complete_cases = sum(complete.cases(self))
+        total_missing = sum(is.na(self$data)),
+        complete_cases = sum(complete.cases(self$data))
       )
       
       cat("✓ Missing data analysis complete\n")
-      cat("  Total missing values:", self, "\n")
-      cat("  Complete cases:", self, "\n")
+      cat("  Total missing values:", self$missing_analysis$total_missing, "\n")
+      cat("  Complete cases:", self$missing_analysis$complete_cases, "\n")
       
       return(invisible(self))
     },
@@ -97,39 +97,39 @@ ImputationPipeline <- R6::R6Class("ImputationPipeline",
       cat("CHARLS LONGITUDINAL IMPUTATION PIPELINE SUMMARY\n")
       cat(paste(rep("=", 50), collapse = ""), "\n")
       
-      if (!is.null(self)) {
-        cat("Data:", nrow(self), "observations,", ncol(self), "variables\n")
+      if (!is.null(self$data)) {
+        cat("Data:", nrow(self$data), "observations,", ncol(self$data), "variables\n")
         
-        if ("ID" %in% names(self)) {
-          n_subjects <- length(unique(self))
+        if ("ID" %in% names(self$data)) {
+          n_subjects <- length(unique(self$data$ID))
           cat("Longitudinal structure:", n_subjects, "subjects\n")
         }
         
-        if ("wave" %in% names(self)) {
-          waves <- sort(unique(self))
+        if ("wave" %in% names(self$data)) {
+          waves <- sort(unique(self$data$wave))
           cat("Time waves:", paste(waves, collapse = ", "), "\n")
         }
       }
       
-      if (!is.null(self)) {
+      if (!is.null(self$variable_types)) {
         cat("\nVariable classification:\n")
-        for (var_type in names(self)) {
-          cat("  ", var_type, ":", length(self[[var_type]]), "variables\n")
+        for (var_type in names(self$variable_types)) {
+          cat("  ", var_type, ":", length(self$variable_types[[var_type]]), "variables\n")
         }
       }
       
-      if (!is.null(self)) {
-        total_missing <- sum(self)
+      if (!is.null(self$missing_analysis)) {
+        total_missing <- sum(self$missing_analysis$summary$n_missing)
         cat("\nMissing data:", total_missing, "values across", 
-            nrow(self), "variables\n")
+            nrow(self$missing_analysis$summary), "variables\n")
       }
       
-      if (!is.null(self)) {
-        cat("\nFitted models:", length(self), "\n")
+      if (!is.null(self$models)) {
+        cat("\nFitted models:", length(self$models), "\n")
       }
       
-      if (!is.null(self)) {
-        cat("\nImputation results:", self, "datasets generated\n")
+      if (!is.null(self$results)) {
+        cat("\nImputation results:", self$results$n_imputations, "datasets generated\n")
       }
       
       cat(paste(rep("=", 50), collapse = ""), "\n\n")
@@ -162,7 +162,7 @@ ImputationPipeline <- R6::R6Class("ImputationPipeline",
 quick_test_pipeline <- function() {
   cat("Testing ImputationPipeline class...\n")
   
-  pipeline <- ImputationPipeline()
+  pipeline <- ImputationPipeline$new()
   cat("✓ Pipeline created successfully\n")
   
   return(pipeline)
