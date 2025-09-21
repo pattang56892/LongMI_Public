@@ -1,0 +1,30 @@
+# R specific
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+
+# Temporary files
+temp/
+*.tmp
+*~
+
+# Log files
+logs/*.log
+
+# Large output files (optional - uncomment to track)
+# outputs/models/*.rds
+# outputs/imputed_data/*.csv
+
+# Data files (optional - uncomment to track data)
+# data/raw/*.csv
+# data/processed/*.rds
+
+# System files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/

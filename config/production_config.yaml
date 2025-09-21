@@ -1,0 +1,25 @@
+# Production Configuration for CHARLS Imputation
+mcmc:
+  n_chains: 3
+  n_adapt: 300
+  n_iter: 2000
+  thin: 2
+
+parallel:
+  enabled: true
+  max_workers: 4
+
+output:
+  n_imputations: 10
+  save_models: true
+  save_diagnostics: true
+
+logging:
+  level: INFO
+  file: logs/imputation.log
+  max_size_mb: 100
+
+data:
+  input_dir: data/raw
+  output_dir: outputs
+  backup_dir: data/backup

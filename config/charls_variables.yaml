@@ -1,0 +1,43 @@
+# CHARLS Variable Classifications
+binary_vars:
+  - nation
+  - marry
+  - smoken
+  - drinkl
+  - pension
+  - ins
+  - fall_down
+  - hip
+  - pain
+  - disability
+  - teeth
+  - cm
+
+ordinal_vars:
+  - srh
+  - satlife
+  - disability_status
+  - eyesight_distance
+  - eyesight_close
+  - hear
+  - edu
+
+continuous_vars:
+  - sleep
+  - total_cognition
+  - cesd10
+  - hhcperc
+  - age
+  - cm_num
+
+required_vars:
+  - ID
+  - wave
+  - gender
+
+exclude_vars:
+  - num
+  - adyear
+  - admonth
+  - chronic_num
+  - mul_chronic
