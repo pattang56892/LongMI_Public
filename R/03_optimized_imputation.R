@@ -1,8 +1,7 @@
 # =====================================================
-# 03_optimized_imputation.R - Main Pipeline Class (FIXED)
+# 03_optimized_imputation.R - Complete Pipeline Class
 # =====================================================
 
-# Ensure R6 is available
 if (!requireNamespace("R6", quietly = TRUE)) {
   install.packages("R6")
 }
@@ -53,13 +52,36 @@ ImputationPipeline <- R6::R6Class("ImputationPipeline",
         self$data$wave <- as.numeric(self$data$wave)
       }
       
-      # Remove num column as in original code
+      # Remove num column
       if ("num" %in% names(self$data)) {
         self$data$num <- NULL
         cat("✓ Removed 'num' column\n")
       }
       
       cat("✓ Longitudinal data structure prepared\n")
+    },
+    
+    # Classify variables
+    classify_variables = function() {
+      self$variable_types <- list(
+        binary_vars = c("nation", "marry", "smoken", "drinkl", "pension", "ins",
+                       "fall_down", "hip", "pain", "disability", "teeth", "cm"),
+        ordinal_vars = c("srh", "satlife", "disability_status", "eyesight_distance",
+                        "eyesight_close", "hear", "edu"),
+        continuous_vars = c("sleep", "total_cognition", "cesd10", "hhcperc", "age", "cm_num")
+      )
+      
+      # Apply data types
+      for (var in intersect(self$variable_types$binary_vars, names(self$data))) {
+        self$data[[var]] <- factor(self$data[[var]])
+      }
+      
+      for (var in intersect(self$variable_types$ordinal_vars, names(self$data))) {
+        self$data[[var]] <- ordered(self$data[[var]])
+      }
+      
+      cat("✓ Variables classified and types applied\n")
+      return(invisible(self))
     },
     
     # Analyze missing data patterns
@@ -70,7 +92,6 @@ ImputationPipeline <- R6::R6Class("ImputationPipeline",
       
       cat("Analyzing missing data patterns...\n")
       
-      # Basic missing data summary
       missing_summary <- self$data %>%
         dplyr::summarise_all(~sum(is.na(.))) %>%
         tidyr::gather(variable, n_missing) %>%
@@ -91,7 +112,137 @@ ImputationPipeline <- R6::R6Class("ImputationPipeline",
       return(invisible(self))
     },
     
-    # Print comprehensive summary
+    # FIT IMPUTATION MODEL - THIS WAS MISSING
+    fit_imputation_model = function(target_var = NULL, n_chains = 2, n_adapt = 500, n_iter = 1000) {
+      
+      if (is.null(self$data)) {
+        stop("No data loaded")
+      }
+      
+      # Clean data - fix list column issue
+      for(i in 1:ncol(self$data)) {
+        if(is.list(self$data[[i]]) && !is.data.frame(self$data[[i]])) {
+          self$data[[i]] <- as.character(self$data[[i]])
+        }
+      }
+      
+      # Select target variable if not specified
+      if (is.null(target_var)) {
+        vars_with_missing <- names(which(colSums(is.na(self$data)) > 0))
+        target_var <- intersect(c("disability_status", "srh", "sleep"), vars_with_missing)[1]
+        if (is.na(target_var)) {
+          target_var <- vars_with_missing[1]
+        }
+      }
+      
+      cat("Fitting imputation model for:", target_var, "\n")
+      
+      # Simple formula to avoid complexity
+      formula_str <- paste(target_var, "~ age + wave + (1|ID)")
+      cat("Formula:", formula_str, "\n")
+      
+      tryCatch({
+        set.seed(123)
+        
+        if (target_var %in% c("srh", "satlife", "disability_status", "edu")) {
+          # Ordinal model
+          model <- JointAI::clmm_imp(
+            as.formula(formula_str),
+            data = self$data,
+            n.chains = n_chains,
+            n.adapt = n_adapt,
+            n.iter = n_iter,
+            progress.bar = "text"
+          )
+        } else if (target_var %in% c("nation", "marry", "smoken", "drinkl")) {
+          # Binary model
+          model <- JointAI::glmm_imp(
+            as.formula(formula_str),
+            family = binomial(),
+            data = self$data,
+            n.chains = n_chains,
+            n.adapt = n_adapt,
+            n.iter = n_iter,
+            progress.bar = "text"
+          )
+        } else {
+          # Continuous model
+          model <- JointAI::lmm_imp(
+            as.formula(formula_str),
+            data = self$data,
+            n.chains = n_chains,
+            n.adapt = n_adapt,
+            n.iter = n_iter,
+            progress.bar = "text"
+          )
+        }
+        
+        self$models <- list()
+        self$models[[target_var]] <- model
+        cat("✓ Model fitted successfully\n")
+        
+      }, error = function(e) {
+        cat("✗ Error fitting model:", e$message, "\n")
+        self$models <- NULL
+      })
+      
+      return(invisible(self))
+    },
+    
+    # GENERATE IMPUTATIONS - THIS WAS MISSING
+    generate_imputations = function(m = 5) {
+      if (is.null(self$models) || length(self$models) == 0) {
+        stop("No fitted models available. Run fit_imputation_model() first.")
+      }
+      
+      cat("Generating", m, "imputed datasets...\n")
+      
+      model <- self$models[[1]]
+      
+      tryCatch({
+        imputed_list <- JointAI::complete(model, m = m)
+        
+        self$results <- list(
+          imputed_datasets = imputed_list,
+          n_imputations = m,
+          generation_time = Sys.time()
+        )
+        
+        cat("✓", m, "imputed datasets generated successfully\n")
+        
+      }, error = function(e) {
+        cat("✗ Error generating imputations:", e$message, "\n")
+        self$results <- NULL
+      })
+      
+      return(invisible(self))
+    },
+    
+    # SAVE RESULTS - THIS WAS MISSING
+    save_results = function(output_dir = "outputs") {
+      if (is.null(self$results)) {
+        stop("No results to save. Run generate_imputations() first.")
+      }
+      
+      # Create directories
+      dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+      dir.create(file.path(output_dir, "imputed_data"), showWarnings = FALSE)
+      dir.create(file.path(output_dir, "models"), showWarnings = FALSE)
+      
+      # Save imputed datasets
+      for (i in seq_along(self$results$imputed_datasets)) {
+        filename <- file.path(output_dir, "imputed_data", paste0("imputed_dataset_", i, ".csv"))
+        readr::write_csv(self$results$imputed_datasets[[i]], filename)
+      }
+      
+      # Save models
+      saveRDS(self$models, file.path(output_dir, "models", "imputation_models.rds"))
+      
+      cat("✓ Results saved to:", output_dir, "\n")
+      return(invisible(self))
+    },
+    
+    # Print summary
     print_summary = function() {
       cat("\n", paste(rep("=", 50), collapse = ""), "\n")
       cat("CHARLS LONGITUDINAL IMPUTATION PIPELINE SUMMARY\n")
@@ -119,7 +270,7 @@ ImputationPipeline <- R6::R6Class("ImputationPipeline",
       }
       
       if (!is.null(self$missing_analysis)) {
-        total_missing <- sum(self$missing_analysis$summary$n_missing)
+        total_missing <- self$missing_analysis$total_missing
         cat("\nMissing data:", total_missing, "values across", 
             nrow(self$missing_analysis$summary), "variables\n")
       }
@@ -158,12 +309,4 @@ ImputationPipeline <- R6::R6Class("ImputationPipeline",
   )
 )
 
-# Test function
-quick_test_pipeline <- function() {
-  cat("Testing ImputationPipeline class...\n")
-  
-  pipeline <- ImputationPipeline$new()
-  cat("✓ Pipeline created successfully\n")
-  
-  return(pipeline)
-}
+cat("Complete ImputationPipeline class loaded with all methods\n")
